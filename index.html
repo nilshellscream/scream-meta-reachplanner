@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meta Geo-Targeting Tool</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet CSS for Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        #map { height: 500px; width: 100%; border-radius: 0.5rem; cursor: crosshair; }
+        .loading-spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border-left-color: #3b82f6;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .search-results {
+            position: absolute;
+            z-index: 1000;
+            width: 100%;
+            max-height: 200px;
+            overflow-y: auto;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            margin-top: 0.25rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans min-h-screen">
+
+<div class="max-w-6xl mx-auto p-4 md:p-8">
+    <header class="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+            <h1 class="text-3xl font-bold text-slate-800 flex items-center gap-2">
+                <i data-lucide="map-pin" class="text-blue-600"></i>
+                Meta Geo-Targeting
+            </h1>
+            <p class="text-slate-500">Klicka i kartan eller sök ort för att lägga till platser.</p>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="toggleSettings()" class="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 transition shadow-sm">
+                <i data-lucide="settings" class="w-4 h-4"></i> Inställningar
+            </button>
+        </div>
+    </header>
+
+    <!-- Settings Panel -->
+    <div id="settings-panel" class="hidden mb-8 bg-white p-6 rounded-xl border border-slate-200 shadow-sm animate-in slide-in-from-top duration-300">
+        <h2 class="text-xl font-semibold mb-4 flex items-center gap-2">
+            <i data-lucide="key" class="w-5 h-5"></i> Meta API Konfiguration
+        </h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Ad Account ID</label>
+                <input type="text" id="ad-account-id" value="462698434597462" class="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Access Token</label>
+                <input type="password" id="access-token" value="EAAVHAHiX4V4BQejge6ImafF9KnZAZCMwUzpsuLXcXLBJQfspKTnqNLdZBcSgI8uAZAVCTSZAzTBVs8ZBWC3KOoICMipIYNr8wKy15pBzahkQVCVJXq53PV1FWYVvtQpnNFmr4nBngBkUkmGCEZC9gU1nzKdCBr68H1zsK8WZCLNX5G0KWvu0bUO6019QZCAZDZD" class="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">API Version</label>
+                <input type="text" id="api-version" value="v21.0" class="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none">
+            </div>
+        </div>
+        <div class="mt-4 flex justify-end">
+            <button onclick="saveSettings()" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition">Spara Inställningar</button>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        <!-- Input Form -->
+        <div class="lg:col-span-5 flex flex-col gap-4">
+            <!-- Search Bar -->
+            <div class="relative bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <label class="block text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                    <i data-lucide="search" class="w-4 h-4"></i> Sök ort eller adress
+                </label>
+                <div class="flex gap-2">
+                    <input type="text" id="location-search" placeholder="Ex: Stockholm, London..." class="flex-1 px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none">
+                    <button onclick="searchLocation()" id="search-btn" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition">Sök</button>
+                </div>
+                <div id="search-results" class="search-results hidden"></div>
+            </div>
+
+            <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-4">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-xl font-semibold">Valda Platser</h2>
+                    <button onclick="addLocation()" class="text-blue-600 hover:text-blue-800 flex items-center gap-1 text-sm font-medium">
+                        <i data-lucide="plus" class="w-4 h-4"></i> Manuell
+                    </button>
+                </div>
+                
+                <div id="locations-list" class="space-y-4 max-h-[500px] overflow-y-auto pr-2">
+                    <!-- Location Rows -->
+                </div>
+
+                <div class="pt-4 border-t flex flex-wrap gap-2">
+                    <button onclick="calculateReach()" id="calc-btn" class="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition flex items-center justify-center gap-2 font-bold shadow-md">
+                        <i data-lucide="zap" class="w-4 h-4"></i> Beräkna Räckvidd
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Map and Results -->
+        <div class="lg:col-span-7 flex flex-col gap-6">
+            <div class="relative bg-white p-1 rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="absolute top-4 right-4 z-[1000] bg-white/90 backdrop-blur px-3 py-1.5 rounded-full text-xs font-bold shadow-lg border border-slate-200 text-blue-600 pointer-events-none">
+                   💡 Tips: Klicka i kartan för att lägga till pin
+                </div>
+                <div id="map"></div>
+            </div>
+
+            <!-- Export Actions -->
+            <div class="flex gap-2 overflow-x-auto pb-2">
+                <button onclick="exportData('geojson')" class="whitespace-nowrap flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition shadow-sm">
+                    <i data-lucide="download" class="w-4 h-4"></i> Exportera GeoJSON
+                </button>
+                <button onclick="exportData('kml')" class="whitespace-nowrap flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition shadow-sm">
+                    <i data-lucide="download" class="w-4 h-4"></i> Exportera KML
+                </button>
+            </div>
+
+            <!-- Reach Results -->
+            <div id="results-panel" class="hidden bg-white p-6 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-blue-600 animate-in fade-in zoom-in duration-300">
+                <h3 class="text-lg font-bold mb-4 flex items-center gap-2">
+                    <i data-lucide="bar-chart-3" class="text-blue-600"></i> Totalt Estimerat Resultat
+                </h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="bg-blue-50 p-4 rounded-lg">
+                        <span class="block text-sm text-blue-600 font-semibold uppercase tracking-wider">Lägsta estimat</span>
+                        <span id="res-lower" class="text-3xl font-black text-slate-800">-</span>
+                    </div>
+                    <div class="bg-blue-50 p-4 rounded-lg">
+                        <span class="block text-sm text-blue-600 font-semibold uppercase tracking-wider">Högsta estimat</span>
+                        <span id="res-upper" class="text-3xl font-black text-slate-800">-</span>
+                    </div>
+                </div>
+                <p id="res-note" class="mt-4 text-sm text-slate-500 italic bg-slate-50 p-2 rounded"></p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    // --- State Management ---
+    let locations = [
+        { id: crypto.randomUUID(), name: 'Stockholm City', lat: 59.3293, lon: 18.0686, rad: 10, include: true, estimate: null, loading: false }
+    ];
+    let map, circleGroup;
+
+    // --- Initialization ---
+    window.onload = () => {
+        lucide.createIcons();
+        initMap();
+        loadSettings();
+        renderLocations();
+        updateMap(true);
+        
+        document.getElementById('location-search').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchLocation();
+        });
+    };
+
+    function initMap() {
+        map = L.map('map').setView([59.3293, 18.0686], 10);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+        circleGroup = L.layerGroup().addTo(map);
+
+        map.on('click', (e) => {
+            const { lat, lng } = e.latlng;
+            addNewLocation('Ny Pin', lat, lng, 10);
+        });
+    }
+
+    // --- Search Logic ---
+    async function searchLocation() {
+        const query = document.getElementById('location-search').value.trim();
+        if (query.length < 2) return;
+
+        const btn = document.getElementById('search-btn');
+        btn.disabled = true;
+        btn.textContent = '...';
+
+        try {
+            const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`);
+            const data = await response.json();
+            showSearchResults(data);
+        } catch (err) {
+            console.error('Search error:', err);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Sök';
+        }
+    }
+
+    function showSearchResults(results) {
+        const container = document.getElementById('search-results');
+        container.innerHTML = '';
+        if (results.length === 0) {
+            container.innerHTML = '<div class="p-3 text-sm text-slate-500">Inga träffar hittades.</div>';
+        } else {
+            results.forEach(res => {
+                const item = document.createElement('div');
+                item.className = "p-3 text-sm hover:bg-blue-50 cursor-pointer border-b last:border-0";
+                item.textContent = res.display_name;
+                item.onclick = () => {
+                    addNewLocation(res.display_name.split(',')[0], parseFloat(res.lat), parseFloat(res.lon), 10);
+                    container.classList.add('hidden');
+                    document.getElementById('location-search').value = '';
+                };
+                container.appendChild(item);
+            });
+        }
+        container.classList.remove('hidden');
+    }
+
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.relative')) {
+            document.getElementById('search-results').classList.add('hidden');
+        }
+    });
+
+    // --- Settings ---
+    function toggleSettings() {
+        document.getElementById('settings-panel').classList.toggle('hidden');
+    }
+
+    function saveSettings() {
+        const settings = {
+            adAccountId: document.getElementById('ad-account-id').value.trim(),
+            accessToken: document.getElementById('access-token').value.trim(),
+            apiVersion: document.getElementById('api-version').value.trim()
+        };
+        localStorage.setItem('meta_geo_settings', JSON.stringify(settings));
+        alert('Inställningar sparade!');
+        toggleSettings();
+    }
+
+    function loadSettings() {
+        const saved = localStorage.getItem('meta_geo_settings');
+        if (saved) {
+            const s = JSON.parse(saved);
+            if (s.adAccountId) document.getElementById('ad-account-id').value = s.adAccountId;
+            if (s.accessToken) document.getElementById('access-token').value = s.accessToken;
+            if (s.apiVersion) document.getElementById('api-version').value = s.apiVersion;
+        }
+    }
+
+    // --- Core Operations ---
+    function addNewLocation(name, lat, lon, rad) {
+        const newLoc = { id: crypto.randomUUID(), name, lat, lon, rad, include: true, estimate: null, loading: false };
+        locations.push(newLoc);
+        renderLocations();
+        updateMap(true);
+    }
+
+    function renderLocations() {
+        const list = document.getElementById('locations-list');
+        list.innerHTML = '';
+        locations.forEach((loc) => {
+            const div = document.createElement('div');
+            div.className = "p-4 bg-slate-50 border border-slate-200 rounded-lg relative group transition hover:border-blue-300";
+            
+            let estimateHtml = '';
+            if (loc.loading) {
+                estimateHtml = `<div class="mt-2 text-[11px] text-blue-600 flex items-center gap-1"><div class="loading-spinner"></div> Hämtar räckvidd...</div>`;
+            } else if (loc.estimate) {
+                estimateHtml = `
+                    <div class="mt-2 p-2 bg-white border border-slate-200 rounded text-[11px] flex justify-between items-center shadow-inner">
+                        <span class="text-slate-500 font-medium">ESTIMERAD RÄCKVIDD</span>
+                        <span class="font-bold text-blue-700">${loc.estimate.lower.toLocaleString()} - ${loc.estimate.upper.toLocaleString()}</span>
+                    </div>
+                `;
+            }
+
+            div.innerHTML = `
+                <button onclick="removeLocation('${loc.id}')" class="absolute top-2 right-2 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition">
+                    <i data-lucide="x-circle" class="w-5 h-5"></i>
+                </button>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="col-span-2">
+                        <input type="text" value="${loc.name}" onchange="updateLoc('${loc.id}', 'name', this.value)" 
+                               placeholder="Platsnamn" class="w-full bg-transparent font-bold border-b border-transparent focus:border-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="text-[10px] uppercase font-bold text-slate-400">Lat/Lon</label>
+                        <div class="text-[11px] text-slate-600">${loc.lat.toFixed(4)}, ${loc.lon.toFixed(4)}</div>
+                    </div>
+                    <div>
+                        <label class="text-[10px] uppercase font-bold text-slate-400">Radie (km)</label>
+                        <input type="number" value="${loc.rad}" onchange="updateLoc('${loc.id}', 'rad', parseInt(this.value))" class="w-full text-sm border rounded px-1">
+                    </div>
+                    <div class="col-span-2">
+                         <select onchange="updateLoc('${loc.id}', 'include', this.value === 'true')" class="w-full text-xs border rounded px-1 py-1 bg-white">
+                            <option value="true" ${loc.include ? 'selected' : ''}>Inkludera i totalen</option>
+                            <option value="false" ${!loc.include ? 'selected' : ''}>Exkludera från totalen</option>
+                        </select>
+                    </div>
+                </div>
+                ${estimateHtml}
+            `;
+            list.appendChild(div);
+        });
+        lucide.createIcons();
+    }
+
+    function addLocation() {
+        addNewLocation('Manuell plats', map.getCenter().lat, map.getCenter().lng, 10);
+    }
+
+    function removeLocation(id) {
+        locations = locations.filter(l => l.id !== id);
+        renderLocations();
+        updateMap();
+    }
+
+    function updateLoc(id, key, val) {
+        const loc = locations.find(l => l.id === id);
+        if (loc) {
+            loc[key] = val;
+            loc.estimate = null; // Reset estimate when data changes
+        }
+        updateMap();
+        renderLocations();
+    }
+
+    function updateMap(fit = false) {
+        circleGroup.clearLayers();
+        const validPoints = locations.filter(l => !isNaN(l.lat) && !isNaN(l.lon));
+        
+        validPoints.forEach(p => {
+            const color = p.include ? '#2563eb' : '#dc2626';
+            const fill = p.include ? '#3b82f6' : '#ef4444';
+            
+            L.circle([p.lat, p.lon], {
+                color: color,
+                fillColor: fill,
+                fillOpacity: 0.15,
+                weight: 2,
+                radius: p.rad * 1000
+            }).addTo(circleGroup).bindPopup(`<b>${p.name}</b><br>${p.rad} km räckvidd`);
+        });
+
+        if (fit && validPoints.length > 0) {
+            const bounds = L.featureGroup(circleGroup.getLayers()).getBounds();
+            if (bounds.isValid()) map.fitBounds(bounds, { padding: [50, 50] });
+        }
+    }
+
+    // --- Meta API Integration ---
+    async function calculateReach() {
+        const adAccountId = document.getElementById('ad-account-id').value.trim();
+        const accessToken = document.getElementById('access-token').value.trim();
+        const apiVersion = document.getElementById('api-version').value.trim();
+
+        if (!accessToken || !adAccountId) {
+            alert('Vänligen fyll i dina API-inställningar först!');
+            toggleSettings();
+            return;
+        }
+
+        const btn = document.getElementById('calc-btn');
+        btn.disabled = true;
+        btn.innerHTML = `<div class="loading-spinner border-white scale-75"></div> Beräknar...`;
+
+        // 1. Mark all as loading
+        locations.forEach(l => l.loading = true);
+        renderLocations();
+
+        try {
+            // 2. Fetch Individual Estimates
+            const individualPromises = locations.map(async (loc) => {
+                const spec = {
+                    age_min: 18,
+                    geo_locations: { 
+                        custom_locations: [{
+                            latitude: loc.lat,
+                            longitude: loc.lon,
+                            radius: Math.min(80, Math.max(1, loc.rad)),
+                            distance_unit: 'kilometer'
+                        }]
+                    }
+                };
+                const res = await fetchMetaEstimate(apiVersion, adAccountId, accessToken, spec);
+                loc.estimate = { lower: res.users_lower_bound, upper: res.users_upper_bound };
+                loc.loading = false;
+                renderLocations();
+            });
+
+            // 3. Fetch Total Estimate
+            const includeList = locations.filter(l => l.include).map(l => ({
+                latitude: l.lat,
+                longitude: l.lon,
+                radius: Math.min(80, Math.max(1, l.rad)),
+                distance_unit: 'kilometer'
+            }));
+
+            const excludeList = locations.filter(l => !l.include).map(l => ({
+                latitude: l.lat,
+                longitude: l.lon,
+                radius: Math.min(80, Math.max(1, l.rad)),
+                distance_unit: 'kilometer'
+            }));
+
+            const totalSpec = {
+                age_min: 18,
+                geo_locations: { custom_locations: includeList }
+            };
+            if (excludeList.length > 0) {
+                totalSpec.excluded_geo_locations = { custom_locations: excludeList };
+            }
+
+            const [totalResult] = await Promise.all([
+                fetchMetaEstimate(apiVersion, adAccountId, accessToken, totalSpec),
+                ...individualPromises
+            ]);
+
+            showResults(totalResult);
+        } catch (err) {
+            alert('Fel: ' + err.message);
+        } finally {
+            locations.forEach(l => l.loading = false);
+            btn.disabled = false;
+            btn.innerHTML = `<i data-lucide="zap" class="w-4 h-4"></i> Beräkna Räckvidd`;
+            renderLocations();
+            lucide.createIcons();
+        }
+    }
+
+    async function fetchMetaEstimate(version, account, token, spec) {
+        const adAccount = account.startsWith('act_') ? account : 'act_' + account;
+        const url = `https://graph.facebook.com/${version}/${adAccount}/reachestimate?access_token=${token}&targeting_spec=${encodeURIComponent(JSON.stringify(spec))}`;
+        
+        const response = await fetch(url);
+        const json = await response.json();
+        if (json.error) throw new Error(json.error.message);
+        return json.data || json;
+    }
+
+    function showResults(data) {
+        const panel = document.getElementById('results-panel');
+        panel.classList.remove('hidden');
+        document.getElementById('res-lower').textContent = data.users_lower_bound?.toLocaleString() || '0';
+        document.getElementById('res-upper').textContent = data.users_upper_bound?.toLocaleString() || '0';
+        document.getElementById('res-note').textContent = data.text || 'Denna siffra visar den totala unika räckvidden för alla inkluderade platser kombinerat.';
+        panel.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // --- Export Utilities ---
+    function exportData(type) {
+        if (type === 'geojson') {
+            const features = locations.map(l => ({
+                type: 'Feature',
+                properties: { name: l.name, include: l.include, radius_km: l.rad, est_lower: l.estimate?.lower, est_upper: l.estimate?.upper },
+                geometry: { type: 'Polygon', coordinates: [generateCircleCoords(l.lat, l.lon, l.rad)] }
+            }));
+            downloadFile(JSON.stringify({ type: 'FeatureCollection', features }, null, 2), 'target-geo.geojson', 'application/geo+json');
+        } else if (type === 'kml') {
+            let kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document>`;
+            locations.forEach(l => {
+                const coords = generateCircleCoords(l.lat, l.lon, l.rad).map(p => `${p[0]},${p[1]},0`).join(' ');
+                kml += `<Placemark><name>${l.name} (${l.estimate?.lower || 0} pers)</name><Polygon><outerBoundaryIs><LinearRing><coordinates>${coords}</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>`;
+            });
+            kml += `</Document></kml>`;
+            downloadFile(kml, 'target-geo.kml', 'application/vnd.google-earth.kml+xml');
+        }
+    }
+
+    function generateCircleCoords(lat, lon, radKm) {
+        const segments = 64;
+        const coords = [];
+        for (let i = 0; i <= segments; i++) {
+            const bearing = (360 * i) / segments;
+            const p = destination(lat, lon, bearing, radKm);
+            coords.push([p.lon, p.lat]);
+        }
+        return coords;
+    }
+
+    function destination(lat, lon, brng, dist) {
+        const R = 6371;
+        const brngRad = (brng * Math.PI) / 180;
+        const latRad = (lat * Math.PI) / 180;
+        const lonRad = (lon * Math.PI) / 180;
+        const dR = dist / R;
+        const sinLat = Math.sin(latRad) * Math.cos(dR) + Math.cos(latRad) * Math.sin(dR) * Math.cos(brngRad);
+        const nextLat = Math.asin(sinLat);
+        const nextLon = lonRad + Math.atan2(Math.sin(brngRad) * Math.sin(dR) * Math.cos(latRad), Math.cos(dR) - Math.sin(latRad) * sinLat);
+        return { lat: (nextLat * 180) / Math.PI, lon: ((nextLon * 180) / Math.PI + 540) % 360 - 180 };
+    }
+
+    function downloadFile(content, filename, type) {
+        const blob = new Blob([content], { type: type });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename; a.click();
+        URL.revokeObjectURL(url);
+    }
+</script>
+</body>
+</html>
