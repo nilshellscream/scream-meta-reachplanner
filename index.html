@@ -112,6 +112,43 @@
                 <div id="search-status" class="notice" style="display:none"></div>
             </div>
 
+            <!-- Audience filters -->
+            <div class="card">
+                <p class="section-title">Målgrupp</p>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;align-items:end">
+                    <div>
+                        <label>Ålder från</label>
+                        <select id="age-min">
+                            <option value="18" selected>18</option>
+                            <option value="21">21</option><option value="25">25</option>
+                            <option value="30">30</option><option value="35">35</option>
+                            <option value="40">40</option><option value="45">45</option>
+                            <option value="50">50</option><option value="55">55</option>
+                            <option value="60">60</option><option value="65">65</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Ålder till</label>
+                        <select id="age-max">
+                            <option value="20">20</option><option value="24">24</option>
+                            <option value="29">29</option><option value="34">34</option>
+                            <option value="39">39</option><option value="44">44</option>
+                            <option value="49">49</option><option value="54">54</option>
+                            <option value="59">59</option><option value="64">64</option>
+                            <option value="65" selected>65+</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Kön</label>
+                        <select id="gender">
+                            <option value="0">Alla kön</option>
+                            <option value="1">Män</option>
+                            <option value="2">Kvinnor</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
             <!-- Locations list -->
             <div class="card" style="flex:1">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -486,8 +523,21 @@
         return spec;
     }
 
+    function getAudienceParams() {
+        const ageMin = parseInt(document.getElementById('age-min').value);
+        const ageMax = parseInt(document.getElementById('age-max').value);
+        const gender = parseInt(document.getElementById('gender').value);
+        return {
+            age_min: ageMin,
+            age_max: ageMax < ageMin ? ageMin : ageMax,
+            genders: gender === 0 ? undefined : [gender]
+        };
+    }
+
     async function fetchEstimate(version, account, token, geoSpec, excludeSpec) {
-        const targetingSpec = { age_min: 18, geo_locations: geoSpec };
+        const { age_min, age_max, genders } = getAudienceParams();
+        const targetingSpec = { age_min, age_max, geo_locations: geoSpec };
+        if (genders) targetingSpec.genders = genders;
         if (excludeSpec) targetingSpec.excluded_geo_locations = excludeSpec;
         const url = `https://graph.facebook.com/${version}/${account}/reachestimate`
                   + `?access_token=${token}`
@@ -543,7 +593,10 @@
 
             document.getElementById('res-lower').textContent = total.users_lower_bound?.toLocaleString() || '0';
             document.getElementById('res-upper').textContent = total.users_upper_bound?.toLocaleString() || '0';
-            document.getElementById('res-note').textContent  = 'Total unik räckvidd för alla inkluderade platser kombinerat.';
+            const { age_min, age_max, genders } = getAudienceParams();
+            const genderLabel = genders ? (genders[0] === 1 ? 'Män' : 'Kvinnor') : 'Alla kön';
+            const ageLabel = age_max === 65 ? `${age_min}–65+` : `${age_min}–${age_max}`;
+            document.getElementById('res-note').textContent = `Målgrupp: ${genderLabel}, ${ageLabel} år. Total unik räckvidd för alla inkluderade platser kombinerat.`;
             document.getElementById('results-panel').style.display = 'block';
 
         } catch (err) {
