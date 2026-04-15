@@ -334,6 +334,7 @@
             return;
         }
 
+        renderOverlapWarning();
         list.innerHTML = '';
         locations.forEach(loc => {
             const div        = document.createElement('div');
@@ -401,6 +402,67 @@
         }
     }
 
+    // --- Overlap Detection ---
+    // Returns array of warning strings describing overlapping include-locations
+    function detectOverlaps() {
+        const incl = locations.filter(l => l.include);
+        const warnings = [];
+
+        const countries = incl.filter(l => l.type === 'country');
+        const regions   = incl.filter(l => l.type === 'region');
+        const cities    = incl.filter(l => l.type === 'city');
+        const zips      = incl.filter(l => l.type === 'zip');
+
+        // City/region/zip inside a country
+        countries.forEach(country => {
+            regions.forEach(region => {
+                if (region.country_code === country.country_code)
+                    warnings.push(`"${region.name}" ligger inom landet "${country.name}"`);
+            });
+            cities.forEach(city => {
+                if (city.country_code === country.country_code)
+                    warnings.push(`"${city.name}" ligger inom landet "${country.name}"`);
+            });
+            zips.forEach(zip => {
+                if (zip.country_code === country.country_code)
+                    warnings.push(`Postnummer "${zip.name}" ligger inom landet "${country.name}"`);
+            });
+        });
+
+        // City/zip inside a region (match by region name stored on city)
+        regions.forEach(region => {
+            cities.forEach(city => {
+                if (city.region && city.region === region.name && city.country_code === region.country_code)
+                    warnings.push(`"${city.name}" ligger inom regionen "${region.name}"`);
+            });
+            zips.forEach(zip => {
+                if (zip.region && zip.region === region.name && zip.country_code === region.country_code)
+                    warnings.push(`Postnummer "${zip.name}" ligger inom regionen "${region.name}"`);
+            });
+        });
+
+        return [...new Set(warnings)];
+    }
+
+    function renderOverlapWarning() {
+        let el = document.getElementById('overlap-warning');
+        const warnings = detectOverlaps();
+        if (!warnings.length) {
+            if (el) el.remove();
+            return false;
+        }
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'overlap-warning';
+            el.className = 'notice warn';
+            el.style.marginBottom = '10px';
+            const calcBtn = document.getElementById('calc-btn');
+            calcBtn.parentNode.insertBefore(el, calcBtn);
+        }
+        el.innerHTML = `<strong>⚠ Överlappande platser — kombinerad räckvidd kan inte beräknas:</strong><ul style="margin-top:6px;padding-left:16px">${warnings.map(w => `<li>${w}</li>`).join('')}</ul><span style="font-size:11px;color:#92400e">Ta bort en av platserna, eller sätt den mer specifika platsen till Exkludera.</span>`;
+        return true;
+    }
+
     // --- Meta Reach Estimate API ---
     function buildGeoSpec(locs) {
         const spec = { countries: [], regions: [], cities: [], zips: [], custom_locations: [] };
@@ -453,7 +515,7 @@
         renderLocations();
 
         try {
-            // Individual estimates (parallel)
+            // Individual estimates (parallel) — always run regardless of overlaps
             const individualPromises = locations.map(async loc => {
                 const gs = buildGeoSpec([loc]);
                 if (!Object.keys(gs).length) { loc.loading = false; renderLocations(); return; }
@@ -463,16 +525,21 @@
                 renderLocations();
             });
 
-            // Total combined estimate
+            await Promise.all(individualPromises);
+
+            // Total combined estimate — only if no overlaps
+            const hasOverlap = renderOverlapWarning();
+            if (hasOverlap) {
+                // Individual estimates still shown per row, but no combined total
+                return;
+            }
+
             const incl     = locations.filter(l => l.include);
             const excl     = locations.filter(l => !l.include);
             const inclGeo  = buildGeoSpec(incl);
             const exclGeo  = excl.length ? buildGeoSpec(excl) : null;
 
-            const [total] = await Promise.all([
-                fetchEstimate(version, account, token, inclGeo, exclGeo),
-                ...individualPromises
-            ]);
+            const total = await fetchEstimate(version, account, token, inclGeo, exclGeo);
 
             document.getElementById('res-lower').textContent = total.users_lower_bound?.toLocaleString() || '0';
             document.getElementById('res-upper').textContent = total.users_upper_bound?.toLocaleString() || '0';
