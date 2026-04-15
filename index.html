@@ -74,23 +74,7 @@
             <h1>Meta Geo-Targeting</h1>
             <p class="sub">Sök platser via Meta's API eller klicka i kartan</p>
         </div>
-        <button class="toggle-link" onclick="toggleSettings()">⚙ Inställningar</button>
     </div>
-
-    <!-- Settings Panel -->
-    <div id="settings-panel" class="card" style="margin-bottom:1rem;display:none">
-        <p class="section-title">Meta API-konfiguration</p>
-        <div class="settings-grid">
-            <div><label>Ad Account ID</label><input id="ad-account-id" type="text" placeholder="462698..."></div>
-            <div><label>Access Token</label><input id="access-token" type="password" placeholder="EAAVHAHiX4..."></div>
-            <div><label>API-version</label><input id="api-version" type="text" value="v21.0"></div>
-        </div>
-        <div style="margin-top:10px;display:flex;justify-content:flex-end;gap:8px">
-            <button onclick="toggleSettings()">Avbryt</button>
-            <button class="btn-primary" onclick="saveSettings()">Spara</button>
-        </div>
-    </div>
-
     <div class="grid">
         <!-- Left column -->
         <div style="display:flex;flex-direction:column;gap:1rem">
@@ -182,6 +166,11 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
+    // --- Credentials (fyll i era värden här) ---
+    const TOKEN   = 'DIN_ACCESS_TOKEN_HÄR';
+    const ACCOUNT = 'act_DITT_ACCOUNT_ID_HÄR';
+    const VERSION = 'v21.0';
+
     // --- State ---
     let locations = [];
     let map, circleGroup;
@@ -192,7 +181,6 @@
     // --- Init ---
     window.onload = () => {
         initMap();
-        loadSettings();
         document.getElementById('location-search').addEventListener('keypress', e => {
             if (e.key === 'Enter') searchLocation();
         });
@@ -224,48 +212,14 @@
         });
     }
 
-    // --- Settings ---
-    function toggleSettings() {
-        const p = document.getElementById('settings-panel');
-        p.style.display = p.style.display === 'none' ? 'block' : 'none';
-    }
-
-    function saveSettings() {
-        localStorage.setItem('meta_geo_settings', JSON.stringify({
-            adAccountId: document.getElementById('ad-account-id').value.trim(),
-            accessToken: document.getElementById('access-token').value.trim(),
-            apiVersion: document.getElementById('api-version').value.trim()
-        }));
-        toggleSettings();
-    }
-
-    function loadSettings() {
-        const s = localStorage.getItem('meta_geo_settings');
-        if (s) {
-            const p = JSON.parse(s);
-            if (p.adAccountId) document.getElementById('ad-account-id').value = p.adAccountId;
-            if (p.accessToken)  document.getElementById('access-token').value  = p.accessToken;
-            if (p.apiVersion)   document.getElementById('api-version').value   = p.apiVersion;
-        }
-    }
 
     // --- Search via Meta Targeting Search API ---
     async function searchLocation() {
-        const q       = document.getElementById('location-search').value.trim();
-        const token   = document.getElementById('access-token').value.trim();
-        const version = document.getElementById('api-version').value.trim() || 'v21.0';
-        const status  = document.getElementById('search-status');
-        const btn     = document.getElementById('search-btn');
+        const q      = document.getElementById('location-search').value.trim();
+        const status = document.getElementById('search-status');
+        const btn    = document.getElementById('search-btn');
 
         if (q.length < 2) return;
-
-        if (!token) {
-            status.textContent = 'Fyll i Access Token i inställningar för att söka via Meta. Du kan också klicka direkt i kartan.';
-            status.className = 'notice warn';
-            status.style.display = 'block';
-            return;
-        }
-
         status.style.display = 'none';
         btn.disabled = true;
         btn.textContent = '...';
@@ -277,11 +231,11 @@
         if (document.getElementById('chk-zip').checked)     types.push('zip');
 
         try {
-            const url = `https://graph.facebook.com/${version}/search`
+            const url = `https://graph.facebook.com/${VERSION}/search`
                       + `?type=adgeolocation`
                       + `&q=${encodeURIComponent(q)}`
                       + `&location_types=${encodeURIComponent(JSON.stringify(types))}`
-                      + `&access_token=${token}`;
+                      + `&access_token=${TOKEN}`;
             const res  = await fetch(url);
             const json = await res.json();
             if (json.error) throw new Error(json.error.message);
@@ -549,12 +503,9 @@
     }
 
     async function calculateReach() {
-        const token      = document.getElementById('access-token').value.trim();
-        const accountRaw = document.getElementById('ad-account-id').value.trim();
-        const version    = document.getElementById('api-version').value.trim() || 'v21.0';
-
-        if (!token || !accountRaw) { toggleSettings(); return; }
-        const account = accountRaw.startsWith('act_') ? accountRaw : 'act_' + accountRaw;
+        const token   = TOKEN;
+        const account = ACCOUNT;
+        const version = VERSION;
 
         const btn = document.getElementById('calc-btn');
         btn.disabled = true;
